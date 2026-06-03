@@ -379,9 +379,8 @@ const FREQ={1:'her ay',2:'2 ayda bir',3:'3 ayda bir',6:'6 ayda bir',12:'yılda b
 function fixedDue(f,y,m){
   const mode=f.mode||'months';
   if(mode==='months'){
-    const ms=f.months||[],ys=f.years||[];
-    const due=ms.includes(m)&&(ys.length===0||ys.includes(y));
-    return {due, info:ms.length?('yılda '+ms.length+' ödeme'):''};
+    const by=f.byYear||{};const ms=by[y]||[];
+    return {due:ms.includes(m), info:ms.length?(y+' yılında '+ms.length+' ödeme'):''};
   }
   // düzenli / taksit modu
   const every=+f.everyMonths||1;
@@ -587,17 +586,20 @@ function fixedRow(f){
   d.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;f[k]=(k==='name')?inp.value:(+inp.value||0);save();});
   const extra=d.querySelector('.extra');
   if(f.mode==='months'){
-    f.years=f.years||[];f.months=f.months||[];
-    const l1=document.createElement('div');l1.className='hint';l1.style.marginTop='0';l1.textContent='1) Hangi yıllar?';
-    extra.appendChild(l1);
+    f.byYear=f.byYear||{};
+    const mk=t=>{const x=document.createElement('div');x.className='hint';x.style.marginTop='0';x.textContent=t;return x;};
+    extra.appendChild(mk('1) Hangi yıllar?'));
     const baseY=new Date().getFullYear();
     const years=[];for(let yy=baseY;yy<=baseY+6;yy++)years.push({v:yy,t:String(yy)});
-    extra.appendChild(pillRow(years,v=>f.years.includes(v),v=>{
-      f.years.includes(v)?f.years=f.years.filter(x=>x!==v):f.years.push(v);save();renderPlan();renderSetup();}));
-    const l2=document.createElement('div');l2.className='hint';l2.style.marginTop='0';l2.textContent='2) Hangi aylar? (seçtiğin her yılda bu aylarda ödenir)';
-    extra.appendChild(l2);
-    extra.appendChild(pillRow(MONTHS.map((mn,i)=>({v:i,t:mn.slice(0,3)})),v=>f.months.includes(v),v=>{
-      f.months.includes(v)?f.months=f.months.filter(x=>x!==v):f.months.push(v);save();renderPlan();renderSetup();}));
+    extra.appendChild(pillRow(years,v=>(v in f.byYear),v=>{
+      (v in f.byYear)?delete f.byYear[v]:f.byYear[v]=[];save();renderPlan();renderSetup();}));
+    // her seçili yıl için ayrı ay seçimi
+    Object.keys(f.byYear).map(Number).sort((a,b)=>a-b).forEach(yy=>{
+      extra.appendChild(mk('2) '+yy+' — hangi aylar?'));
+      extra.appendChild(pillRow(MONTHS.map((mn,i)=>({v:i,t:mn.slice(0,3)})),
+        v=>f.byYear[yy].includes(v),
+        v=>{const arr=f.byYear[yy];const i=arr.indexOf(v);i>=0?arr.splice(i,1):arr.push(v);save();renderPlan();renderSetup();}));
+    });
   } else {
     extra.innerHTML=`<div class="row">
         <div class="field"><label>Sıklık</label><select data-fk="everyMonths">
@@ -619,8 +621,11 @@ function fixedRow(f){
 function fixDefaults(f){
   const now=new Date();
   if(!f.mode)f.mode='months';
-  if(!f.years)f.years=[now.getFullYear()];
-  if(!f.months)f.months=[];
+  if(!f.byYear){
+    f.byYear={};
+    if(Array.isArray(f.years)&&Array.isArray(f.months)&&f.years.length) f.years.forEach(y=>{f.byYear[y]=f.months.slice();});
+    else f.byYear[now.getFullYear()]=[];
+  }
   if(!f.everyMonths)f.everyMonths=1;
   if(f.startYear==null)f.startYear=now.getFullYear();
   if(f.startMonth==null)f.startMonth=now.getMonth();
