@@ -279,6 +279,7 @@ const CURRENCIES=[
 let data=load();
 if(!data.config.oneoffs)data.config.oneoffs=[]; // eski kayıtlarla uyum
 data.config.incomes.forEach(incNorm); // gelirleri yıl/ay yapısına çevir
+data.config.categories.forEach(catNorm); // kotaları yıl/ay yapısına çevir
 
 function defaults(){
   return {
@@ -355,7 +356,7 @@ function renderMonthSaveCard(){
   const net=inc+oGel-fixed-oGid-spent;
   const neg=net<0;
   // kotalar (aylık planlı harcama) ve fark
-  const quotaTotal=data.config.categories.reduce((s,c)=>s+(+c.limit||0),0);
+  const quotaTotal=monthlyQuota(y,m);
   const quotaSpent=data.expenses.filter(e=>inMonth(e.date,y,m)&&data.config.categories.some(c=>c.name===e.category)).reduce((s,e)=>s+e.amount,0);
   const kotaFark=quotaTotal-quotaSpent; // + : az harcadın (birikime ekle), - : aştın (saving'den düş)
   const planNet=inc+oGel-fixed-oGid-quotaTotal; // kotalara tam uyarsan bu ay birikim
@@ -447,10 +448,15 @@ function fixedDue(f,y,m){
   return {due:true,info};
 }
 /* ---- Birikim / saving hesapları ---- */
-function catSpentInPeriod(name,y,pStart,N){
-  return data.expenses.filter(e=>{const[a,b]=e.date.split('-');const mm=+b-1;
-    return +a===y&&mm>=pStart&&mm<pStart+N&&e.category===name;}).reduce((s,e)=>s+e.amount,0);
+function catSpentMonth(name,y,m){ // bir kotanın o aydaki gerçek harcaması
+  return data.expenses.filter(e=>{const[a,b]=e.date.split('-');return +a===y&&(+b-1)===m&&e.category===name;}).reduce((s,e)=>s+e.amount,0);
 }
+function catNorm(c){ // kotaya yıl/ay (byYear) yapısı garanti et
+  if(!c.byYear){c.byYear={};const baseY=new Date().getFullYear();for(let yy=baseY;yy<=baseY+6;yy++)c.byYear[yy]=ALLM.slice();}
+  return c;
+}
+function catActive(c,y,m){return ((c.byYear||{})[y]||[]).includes(m);} // kota o ay geçerli mi
+function monthlyQuota(y,m){return data.config.categories.reduce((s,c)=>s+(catActive(c,y,m)?(+c.limit||0):0),0);}
 function incNorm(i){ // eski gelir verisini yıl/ay (byYear) yapısına çevir
   if(!i.byYear){
     i.byYear={};
@@ -467,11 +473,8 @@ function incomeAnnual(y){let t=0;for(let m=0;m<12;m++)t+=incomeMonth(y,m);return
 function oneoffSum(kind,y,m){return data.config.oneoffs.filter(o=>o.kind===kind&&+o.year===y&&+o.month===m).reduce((s,o)=>s+(+o.amount||0),0);}
 function oneoffYear(kind,y){return data.config.oneoffs.filter(o=>o.kind===kind&&+o.year===y).reduce((s,o)=>s+(+o.amount||0),0);}
 function annualFixed(y){let t=0;for(let m=0;m<12;m++)data.config.fixed.forEach(f=>{if(fixedDue(f,y,m).due)t+=(+f.amount||0);});return t;}
-function annualQuotaBudget(){return data.config.categories.reduce((s,c)=>s+(+c.limit||0)*(12/(+c.everyMonths||1)),0);}
-function quotaBudgetElapsed(uptoMonth){ // bu ana kadar beklenen kota harcaması (yıla orantılı: aylık tempo × geçen ay)
-  return data.config.categories.reduce((s,c)=>{const N=+c.everyMonths||1;
-    return s+((+c.limit||0)/N)*(uptoMonth+1);},0);
-}
+function annualQuotaBudget(y){let t=0;for(let m=0;m<12;m++)t+=monthlyQuota(y,m);return t;}
+function quotaBudgetElapsed(y,uptoMonth){let t=0;for(let m=0;m<=uptoMonth;m++)t+=monthlyQuota(y,m);return t;}
 function spentYearUpTo(y,uptoMonth){
   return data.expenses.filter(e=>{const[a,b]=e.date.split('-');return +a===y&&(+b-1)<=uptoMonth;}).reduce((s,e)=>s+e.amount,0);
 }
@@ -480,10 +483,10 @@ function savingPlan(y){
   const cur=(y===now.getFullYear())?now.getMonth():11;
   const inc=incomeAnnual(y)+oneoffYear('gelir',y);
   const fix=annualFixed(y)+oneoffYear('gider',y);
-  const budget=annualQuotaBudget();
+  const budget=annualQuotaBudget(y);
   const baseline=inc-fix-budget;                    // kotalara tam uyarsan yıl sonu birikim
   const actualSoFar=spentYearUpTo(y,cur);           // bu yıl bugüne kadar gerçek harcama
-  const plannedRemaining=budget-quotaBudgetElapsed(cur); // kalan aylar için planlı kota
+  const plannedRemaining=budget-quotaBudgetElapsed(y,cur); // kalan aylar için planlı kota
   const live=inc-fix-actualSoFar-plannedRemaining;  // güncel tahmini birikim
   return {baseline,live,delta:live-baseline,inc,fix,budget};
 }
@@ -506,19 +509,17 @@ function renderReport(){
   const cr=document.getElementById('catReport');cr.innerHTML='';
   if(!data.config.categories.length)cr.innerHTML='<div class="empty">Kategori tanımlı değil (Plan sekmesi).</div>';
   data.config.categories.forEach(c=>{
-    const N=+c.everyMonths||1;
-    const pStart=Math.floor(m/N)*N;
-    const spent=catSpentInPeriod(c.name,y,pStart,N);
-    const limit=+c.limit||0;const rem=limit-spent;
+    const active=catActive(c,y,m);
+    const spent=catSpentMonth(c.name,y,m);
+    const limit=active?(+c.limit||0):0;const rem=limit-spent;
     const pct=limit>0?Math.min(100,spent/limit*100):0;
     const color=pct>=100?'var(--bad)':pct>=80?'var(--warn)':'var(--good)';
-    const periodLbl=N===1?'bu ay':(FREQ[N]+' · '+MONTHS[pStart].slice(0,3)+'–'+MONTHS[(pStart+N-1)%12].slice(0,3));
     const d=document.createElement('div');d.style.marginBottom='14px';
-    d.innerHTML=`<div class="meta"><span class="big">${c.name} <span class="tag">${periodLbl}</span></span>
-      <span class="amt">${fmt(spent)} / ${limit?fmt(limit):'∞'} ${cur()}</span></div>
+    d.innerHTML=`<div class="meta"><span class="big">${c.name} <span class="tag">${active?'bu ay':'bu ay kota yok'}</span></span>
+      <span class="amt">${fmt(spent)} / ${active?fmt(limit):'—'} ${cur()}</span></div>
       <div class="barwrap"><div class="bar" style="width:${pct}%;background:${color}"></div></div>
-      <div class="meta"><span>${pct.toFixed(0)}% kullanıldı</span>
-      <span style="color:${rem<0?'var(--bad)':'var(--muted)'}">${limit?(rem>=0?fmt(rem)+' kaldı':fmt(-rem)+' aşıldı'):''}</span></div>`;
+      <div class="meta"><span>${active?pct.toFixed(0)+'% kullanıldı':'harcama'}</span>
+      <span style="color:${rem<0?'var(--bad)':'var(--muted)'}">${active?(rem>=0?fmt(rem)+' kaldı':fmt(-rem)+' aşıldı'):''}</span></div>`;
     cr.appendChild(d);
   });
 
@@ -559,10 +560,6 @@ document.getElementById('nextMonth').onclick=()=>{view.month++;if(view.month>11)
 
 /* ---------------- BİRİKİM ---------------- */
 let savYear=new Date().getFullYear();
-function monthlyPlannedQuota(m){
-  return data.config.categories.reduce((s,c)=>{const N=+c.everyMonths||1;
-    return s+((m%N===0)?(+c.limit||0):0);},0);
-}
 function renderSaving(){
   document.getElementById('savYearLabel').textContent=savYear+' birikim planı';
   const now=new Date();
@@ -573,7 +570,7 @@ function renderSaving(){
     const isActual=(savYear<now.getFullYear())||(savYear===now.getFullYear()&&m<=now.getMonth());
     const spend_m=isActual
       ? data.expenses.filter(e=>inMonth(e.date,savYear,m)).reduce((s,e)=>s+e.amount,0)
-      : monthlyPlannedQuota(m);
+      : monthlyQuota(savYear,m);
     const net=inc_m-fixed_m-spend_m;cum+=net;
     rows.push({m,inc_m,fixed_m,spend_m,net,cum,isActual});
   }
@@ -724,13 +721,15 @@ function fixDefaults(f){
   if(f.totalMonths==null)f.totalMonths=0;
 }
 function catRow(c){
-  c.everyMonths=1; // kotalar aylık
+  catNorm(c);
   const d=editCard();
   d.innerHTML=`<div class="row">
       <div class="field"><label>Kota adı (örn. Mutfak, Benzin)</label><input type="text" value="${c.name}" data-k="name" placeholder="Mutfak"></div>
-      <div class="field"><label>Aylık limit</label><input type="number" value="${c.limit}" data-k="limit"></div></div>`;
+      <div class="field"><label>Aylık limit</label><input type="number" value="${c.limit}" data-k="limit"></div></div>
+    <div class="ext"></div>`;
   d.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;c[k]=(k==='name')?inp.value:(+inp.value||0);save();});
-  const del=document.createElement('button');del.className='danger';del.style.width='100%';del.textContent='Sil';
+  d.querySelector('.ext').appendChild(byYearEditor(c));
+  const del=document.createElement('button');del.className='danger';del.style.width='100%';del.style.marginTop='6px';del.textContent='Sil';
   del.onclick=()=>{data.config.categories=data.config.categories.filter(z=>z.id!==c.id);save();renderPlan();renderSetup();};
   d.appendChild(del);return d;
 }
@@ -761,7 +760,7 @@ function addOneoff(){const now=new Date();data.config.oneoffs.push({id:uid(),kin
 
 document.getElementById('addIncome').onclick=()=>{data.config.incomes.push({id:uid(),name:'Yeni gelir',amount:0,byYear:{[new Date().getFullYear()]:ALLM.slice()}});save();renderPlan();};
 document.getElementById('addFixed').onclick=()=>{data.config.fixed.push({id:uid(),name:'',amount:0});save();renderPlan();};
-document.getElementById('addCat').onclick=()=>{data.config.categories.push({id:uid(),name:'Yeni kategori',limit:0});save();renderPlan();};
+document.getElementById('addCat').onclick=()=>{data.config.categories.push({id:uid(),name:'',limit:0,byYear:{[new Date().getFullYear()]:ALLM.slice()}});save();renderPlan();};
 document.getElementById('currencyInput').onchange=e=>{data.config.currency=e.target.value;save();renderAdd();};
 document.getElementById('resetBtn').onclick=()=>{if(confirm('Tüm veriler silinsin mi?')){data=defaults();save();renderPlan();renderAdd();toast('Sıfırlandı');}};
 document.getElementById('exportBtn').onclick=()=>{
@@ -779,9 +778,8 @@ function reportContext(){
   const net=inc+oGel-fixed-oGid-spent;
   const sp=savingPlan(y);
   const cats=data.config.categories.map(c=>{
-    const N=+c.everyMonths||1;const pStart=Math.floor(m/N)*N;
-    const cs=catSpentInPeriod(c.name,y,pStart,N);const limit=+c.limit||0;
-    return {name:c.name,freq:FREQ[N]||'',limit,spent:cs,rem:limit-cs,pct:limit?Math.round(cs/limit*100):0};
+    const active=catActive(c,y,m);const cs=catSpentMonth(c.name,y,m);const limit=active?(+c.limit||0):0;
+    return {name:c.name,freq:active?'aylık':'bu ay yok',limit,spent:cs,rem:limit-cs,pct:limit?Math.round(cs/limit*100):0};
   });
   return {y,m,inc,oGel,fixed,oGid,spent,net,sp,cats};
 }
@@ -858,7 +856,7 @@ document.getElementById('setupAddIncome').onclick=()=>{data.config.incomes.push(
 document.getElementById('setupAddFixed').onclick=()=>{data.config.fixed.push({id:uid(),name:'',amount:0});save();renderSetup();};
 document.getElementById('addOneoff').onclick=addOneoff;
 document.getElementById('setupAddOneoff').onclick=addOneoff;
-document.getElementById('setupAddCat').onclick=()=>{data.config.categories.push({id:uid(),name:'',limit:0});save();renderSetup();};
+document.getElementById('setupAddCat').onclick=()=>{data.config.categories.push({id:uid(),name:'',limit:0,byYear:{[new Date().getFullYear()]:ALLM.slice()}});save();renderSetup();};
 document.getElementById('setupFinish').onclick=()=>{
   if(!(+(data.config.incomes[0]?.amount)>0)){toast('Önce maaşını gir',true);document.getElementById('setupSalary').focus();return;}
   data.config.setupDone=true;save();
