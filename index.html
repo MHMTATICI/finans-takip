@@ -310,7 +310,7 @@ function renderAdd(){
 function renderMonthSaveCard(){
   const el=document.getElementById('monthSaveCard');if(!el)return;
   const now=new Date();const y=now.getFullYear(),m=now.getMonth();
-  const inc=monthlyIncome();
+  const inc=incomeMonth(y,m);
   const fixed=data.config.fixed.reduce((s,f)=>s+(fixedDue(f,y,m).due?(+f.amount||0):0),0);
   const spent=data.expenses.filter(e=>inMonth(e.date,y,m)).reduce((s,e)=>s+e.amount,0);
   const oGel=oneoffSum('gelir',y,m), oGid=oneoffSum('gider',y,m);
@@ -401,15 +401,17 @@ function catSpentInPeriod(name,y,pStart,N){
   return data.expenses.filter(e=>{const[a,b]=e.date.split('-');const mm=+b-1;
     return +a===y&&mm>=pStart&&mm<pStart+N&&e.category===name;}).reduce((s,e)=>s+e.amount,0);
 }
-function monthlyIncome(){return data.config.incomes.reduce((s,i)=>s+(+i.amount||0),0);}
+function incomeMonth(y,m){return data.config.incomes.reduce((s,i)=>{const p=i.period||'monthly';
+  return s+(p==='yearly'?(((+i.month||0)===m)?(+i.amount||0):0):(+i.amount||0));},0);}
+function incomeAnnual(){return data.config.incomes.reduce((s,i)=>{const p=i.period||'monthly';
+  return s+(p==='yearly'?(+i.amount||0):(+i.amount||0)*12);},0);}
 function oneoffSum(kind,y,m){return data.config.oneoffs.filter(o=>o.kind===kind&&+o.year===y&&+o.month===m).reduce((s,o)=>s+(+o.amount||0),0);}
 function oneoffYear(kind,y){return data.config.oneoffs.filter(o=>o.kind===kind&&+o.year===y).reduce((s,o)=>s+(+o.amount||0),0);}
-function annualIncome(){return monthlyIncome()*12;}
 function annualFixed(y){let t=0;for(let m=0;m<12;m++)data.config.fixed.forEach(f=>{if(fixedDue(f,y,m).due)t+=(+f.amount||0);});return t;}
 function annualQuotaBudget(){return data.config.categories.reduce((s,c)=>s+(+c.limit||0)*(12/(+c.everyMonths||1)),0);}
-function quotaBudgetElapsed(uptoMonth){ // bu yılda şu ana kadar başlamış kota dönemlerinin toplam limiti
+function quotaBudgetElapsed(uptoMonth){ // bu ana kadar beklenen kota harcaması (yıla orantılı: aylık tempo × geçen ay)
   return data.config.categories.reduce((s,c)=>{const N=+c.everyMonths||1;
-    return s+(+c.limit||0)*(Math.floor(uptoMonth/N)+1);},0);
+    return s+((+c.limit||0)/N)*(uptoMonth+1);},0);
 }
 function spentYearUpTo(y,uptoMonth){
   return data.expenses.filter(e=>{const[a,b]=e.date.split('-');return +a===y&&(+b-1)<=uptoMonth;}).reduce((s,e)=>s+e.amount,0);
@@ -417,7 +419,7 @@ function spentYearUpTo(y,uptoMonth){
 function savingPlan(y){
   const now=new Date();
   const cur=(y===now.getFullYear())?now.getMonth():11;
-  const inc=annualIncome()+oneoffYear('gelir',y);
+  const inc=incomeAnnual()+oneoffYear('gelir',y);
   const fix=annualFixed(y)+oneoffYear('gider',y);
   const budget=annualQuotaBudget();
   const baseline=inc-fix-budget;                    // kotalara tam uyarsan yıl sonu birikim
@@ -432,7 +434,7 @@ function renderReport(){
   document.getElementById('monthLabel').textContent=MONTHS[m]+' '+y;
   const monthExp=data.expenses.filter(e=>inMonth(e.date,y,m));
   const totalSpent=monthExp.reduce((s,e)=>s+e.amount,0);
-  const totalIncome=data.config.incomes.reduce((s,i)=>s+ (+i.amount||0),0)+oneoffSum('gelir',y,m);
+  const totalIncome=incomeMonth(y,m)+oneoffSum('gelir',y,m);
   let totalFixed=oneoffSum('gider',y,m);data.config.fixed.forEach(f=>{if(fixedDue(f,y,m).due)totalFixed+=(+f.amount||0);});
   const net=totalIncome-totalFixed-totalSpent;
 
@@ -504,10 +506,10 @@ function monthlyPlannedQuota(m){
 }
 function renderSaving(){
   document.getElementById('savYearLabel').textContent=savYear+' birikim planı';
-  const now=new Date();const baseInc=monthlyIncome();
+  const now=new Date();
   let cum=0;const rows=[];
   for(let m=0;m<12;m++){
-    const inc_m=baseInc+oneoffSum('gelir',savYear,m);
+    const inc_m=incomeMonth(savYear,m)+oneoffSum('gelir',savYear,m);
     const fixed_m=data.config.fixed.reduce((s,f)=>s+(fixedDue(f,savYear,m).due?(+f.amount||0):0),0)+oneoffSum('gider',savYear,m);
     const isActual=(savYear<now.getFullYear())||(savYear===now.getFullYear()&&m<=now.getMonth());
     const spend_m=isActual
@@ -523,7 +525,7 @@ function renderSaving(){
      <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0">
        <span class="amt" style="font-size:30px;font-weight:800;color:${yearEnd>=0?'var(--accent)':'var(--bad)'}">${fmt(yearEnd)}</span>
        <span style="color:var(--muted)">${cur()}</span></div>
-     <div class="meta"><span>Yıllık gelir: ${fmt(baseInc*12+oneoffYear('gelir',savYear))}</span><span>Gider: ${fmt(annualFixed(savYear)+oneoffYear('gider',savYear))}</span></div>`;
+     <div class="meta"><span>Yıllık gelir: ${fmt(incomeAnnual()+oneoffYear('gelir',savYear))}</span><span>Gider: ${fmt(annualFixed(savYear)+oneoffYear('gider',savYear))}</span></div>`;
   // tablo
   const t=document.getElementById('savTable');t.innerHTML='';
   rows.forEach(r=>{
@@ -556,13 +558,27 @@ function renderPlan(){
 }
 function editCard(){const d=document.createElement('div');d.className='card';d.style.background='var(--card2)';return d;}
 function incomeRow(i){
+  if(!i.period)i.period='monthly';
   const d=editCard();
   d.innerHTML=`<div class="field"><label>Ad</label><input type="text" value="${i.name}" data-k="name"></div>
-    <div class="row"><div class="field"><label>Tutar</label><input type="number" value="${i.amount}" data-k="amount"></div>
-    <div class="field"><label>Ayın günü</label><input type="number" value="${i.day}" data-k="day"></div></div>`;
-  d.querySelectorAll('input').forEach(inp=>inp.oninput=()=>{i[inp.dataset.k]=inp.dataset.k==='name'?inp.value:+inp.value;save();});
+    <div class="row">
+      <div class="field"><label>Tutar</label><input type="number" value="${i.amount}" data-k="amount"></div>
+      <div class="field"><label>Sıklık</label><select data-k="period">
+        <option value="monthly">Aylık</option><option value="yearly">Yıllık</option></select></div></div>
+    <div class="extra"></div>`;
+  d.querySelector('[data-k=period]').value=i.period;
+  d.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;
+    i[k]=(k==='name'||k==='period')?inp.value:(+inp.value||0);
+    if(k==='period'){save();renderPlan();renderSetup();return;}save();});
+  const extra=d.querySelector('.extra');
+  if(i.period==='yearly'){
+    if(i.month==null)i.month=0;
+    extra.innerHTML=`<div class="field"><label>Hangi ay gelir?</label><select data-mk="month">${MONTHS.map((mn,idx)=>`<option value="${idx}">${mn}</option>`).join('')}</select></div>`;
+    const sel=extra.querySelector('[data-mk=month]');sel.value=i.month;
+    sel.oninput=()=>{i.month=+sel.value;save();};
+  }
   const del=document.createElement('button');del.className='danger';del.style.width='100%';del.textContent='Sil';
-  del.onclick=()=>{data.config.incomes=data.config.incomes.filter(z=>z.id!==i.id);save();renderPlan();};
+  del.onclick=()=>{data.config.incomes=data.config.incomes.filter(z=>z.id!==i.id);save();renderPlan();renderSetup();};
   d.appendChild(del);return d;
 }
 function pillRow(items,isOn,onToggle){
@@ -686,7 +702,7 @@ document.getElementById('exportBtn').onclick=()=>{
 /* ---------------- Excel / PDF rapor ---------------- */
 function reportContext(){
   const now=new Date();const y=now.getFullYear(),m=now.getMonth();
-  const inc=monthlyIncome(), oGel=oneoffSum('gelir',y,m);
+  const inc=incomeMonth(y,m), oGel=oneoffSum('gelir',y,m);
   const fixed=data.config.fixed.reduce((s,f)=>s+(fixedDue(f,y,m).due?(+f.amount||0):0),0);
   const oGid=oneoffSum('gider',y,m);
   const spent=data.expenses.filter(e=>inMonth(e.date,y,m)).reduce((s,e)=>s+e.amount,0);
