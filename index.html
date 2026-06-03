@@ -92,8 +92,12 @@
 
   <div class="card salary">
     <div class="step">1 · Gelir</div>
-    <h2 style="margin-top:6px">Aylık maaşın ne kadar?</h2>
+    <h2 style="margin-top:6px">Maaşın ne kadar?</h2>
     <input type="number" id="setupSalary" placeholder="0" inputmode="numeric">
+    <div class="hint" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Hangi aylarda alıyorsun?</span>
+      <span><a href="#" id="setupSalAll" style="color:var(--accent)">Her ay</a> · <a href="#" id="setupSalNone" style="color:var(--accent)">Temizle</a></span></div>
+    <div id="setupSalaryMonths"></div>
     <div id="setupIncomeExtra"></div>
     <button class="ghost" id="setupAddIncome" style="margin-top:8px">+ Başka gelir ekle</button>
   </div>
@@ -401,10 +405,14 @@ function catSpentInPeriod(name,y,pStart,N){
   return data.expenses.filter(e=>{const[a,b]=e.date.split('-');const mm=+b-1;
     return +a===y&&mm>=pStart&&mm<pStart+N&&e.category===name;}).reduce((s,e)=>s+e.amount,0);
 }
-function incomeMonth(y,m){return data.config.incomes.reduce((s,i)=>{const p=i.period||'monthly';
-  return s+(p==='yearly'?(((+i.month||0)===m)?(+i.amount||0):0):(+i.amount||0));},0);}
-function incomeAnnual(){return data.config.incomes.reduce((s,i)=>{const p=i.period||'monthly';
-  return s+(p==='yearly'?(+i.amount||0):(+i.amount||0)*12);},0);}
+const ALLM=[0,1,2,3,4,5,6,7,8,9,10,11];
+function incMonths(i){ // hangi aylarda alınıyor
+  if(Array.isArray(i.months))return i.months;
+  if(i.period==='yearly')return [i.month||0];   // eski veri göçü
+  return ALLM;                                    // varsayılan: her ay
+}
+function incomeMonth(y,m){return data.config.incomes.reduce((s,i)=>s+(incMonths(i).includes(m)?(+i.amount||0):0),0);}
+function incomeAnnual(){return data.config.incomes.reduce((s,i)=>s+(+i.amount||0)*incMonths(i).length,0);}
 function oneoffSum(kind,y,m){return data.config.oneoffs.filter(o=>o.kind===kind&&+o.year===y&&+o.month===m).reduce((s,o)=>s+(+o.amount||0),0);}
 function oneoffYear(kind,y){return data.config.oneoffs.filter(o=>o.kind===kind&&+o.year===y).reduce((s,o)=>s+(+o.amount||0),0);}
 function annualFixed(y){let t=0;for(let m=0;m<12;m++)data.config.fixed.forEach(f=>{if(fixedDue(f,y,m).due)t+=(+f.amount||0);});return t;}
@@ -558,25 +566,21 @@ function renderPlan(){
 }
 function editCard(){const d=document.createElement('div');d.className='card';d.style.background='var(--card2)';return d;}
 function incomeRow(i){
-  if(!i.period)i.period='monthly';
+  if(!Array.isArray(i.months))i.months=incMonths(i).slice();
   const d=editCard();
   d.innerHTML=`<div class="field"><label>Ad</label><input type="text" value="${i.name}" data-k="name"></div>
-    <div class="row">
-      <div class="field"><label>Tutar</label><input type="number" value="${i.amount}" data-k="amount"></div>
-      <div class="field"><label>Sıklık</label><select data-k="period">
-        <option value="monthly">Aylık</option><option value="yearly">Yıllık</option></select></div></div>
-    <div class="extra"></div>`;
-  d.querySelector('[data-k=period]').value=i.period;
-  d.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;
-    i[k]=(k==='name'||k==='period')?inp.value:(+inp.value||0);
-    if(k==='period'){save();renderPlan();renderSetup();return;}save();});
-  const extra=d.querySelector('.extra');
-  if(i.period==='yearly'){
-    if(i.month==null)i.month=0;
-    extra.innerHTML=`<div class="field"><label>Hangi ay gelir?</label><select data-mk="month">${MONTHS.map((mn,idx)=>`<option value="${idx}">${mn}</option>`).join('')}</select></div>`;
-    const sel=extra.querySelector('[data-mk=month]');sel.value=i.month;
-    sel.oninput=()=>{i.month=+sel.value;save();};
-  }
+    <div class="field"><label>Tutar (her alındığında)</label><input type="number" value="${i.amount}" data-k="amount"></div>
+    <div class="hint" style="margin-top:0;display:flex;justify-content:space-between;align-items:center">
+      <span>Hangi aylarda alıyorsun?</span>
+      <span><a href="#" class="mall" style="color:var(--accent)">Her ay</a> · <a href="#" class="mnone" style="color:var(--accent)">Temizle</a></span></div>
+    <div class="ext"></div>`;
+  d.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;i[k]=(k==='name')?inp.value:(+inp.value||0);save();});
+  const ext=d.querySelector('.ext');
+  ext.appendChild(pillRow(MONTHS.map((mn,idx)=>({v:idx,t:mn.slice(0,3)})),
+    v=>i.months.includes(v),
+    v=>{const j=i.months.indexOf(v);j>=0?i.months.splice(j,1):i.months.push(v);save();renderPlan();renderSetup();}));
+  d.querySelector('.mall').onclick=e=>{e.preventDefault();i.months=ALLM.slice();save();renderPlan();renderSetup();};
+  d.querySelector('.mnone').onclick=e=>{e.preventDefault();i.months=[];save();renderPlan();renderSetup();};
   const del=document.createElement('button');del.className='danger';del.style.width='100%';del.textContent='Sil';
   del.onclick=()=>{data.config.incomes=data.config.incomes.filter(z=>z.id!==i.id);save();renderPlan();renderSetup();};
   d.appendChild(del);return d;
@@ -761,9 +765,19 @@ function maybeSetup(){
 }
 function renderSetup(){
   // ana maaş = ilk gelir
+  const inc0=data.config.incomes[0];
+  if(inc0&&!Array.isArray(inc0.months))inc0.months=incMonths(inc0).slice();
   const salary=document.getElementById('setupSalary');
-  salary.value=data.config.incomes[0]?.amount||'';
-  salary.oninput=()=>{if(data.config.incomes[0])data.config.incomes[0].amount=+salary.value;save();};
+  salary.value=inc0?.amount||'';
+  salary.oninput=()=>{if(inc0)inc0.amount=+salary.value;save();};
+  const mc=document.getElementById('setupSalaryMonths');mc.innerHTML='';
+  if(inc0){
+    mc.appendChild(pillRow(MONTHS.map((mn,idx)=>({v:idx,t:mn.slice(0,3)})),
+      v=>inc0.months.includes(v),
+      v=>{const j=inc0.months.indexOf(v);j>=0?inc0.months.splice(j,1):inc0.months.push(v);save();renderSetup();}));
+    document.getElementById('setupSalAll').onclick=e=>{e.preventDefault();inc0.months=ALLM.slice();save();renderSetup();};
+    document.getElementById('setupSalNone').onclick=e=>{e.preventDefault();inc0.months=[];save();renderSetup();};
+  }
   // ek gelirler (ilk hariç)
   const ie=document.getElementById('setupIncomeExtra');ie.innerHTML='';
   data.config.incomes.slice(1).forEach(i=>ie.appendChild(incomeRow(i)));
