@@ -808,12 +808,17 @@ function exportExcel(){
 }
 function exportPDF(){
   const {t1,t2,title}=tablesHTML();
-  const css='body{font-family:-apple-system,system-ui,sans-serif;padding:22px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.d{color:#64748b;font-size:12px;margin-bottom:14px}h2{font-size:14px;margin:18px 0 6px}table{border-collapse:collapse;width:100%;font-size:13px;margin-bottom:8px}th{background:#0f172a;color:#fff;text-align:left;padding:8px}td{border:1px solid #cbd5e1;padding:8px}thead th{border:1px solid #0f172a}.pbtn{margin-top:16px;padding:12px 18px;border:none;border-radius:8px;background:#38bdf8;color:#04293a;font-weight:700;font-size:15px}@media print{.pbtn{display:none}}';
-  const body='<h1>'+title+'</h1><div class="d">Oluşturulma: '+new Date().toLocaleString('tr-TR')+'</div><h2>Özet</h2>'+t1+'<h2>Kota Durumu</h2>'+t2+'<button class="pbtn" onclick="window.print()">📄 Yazdır / PDF olarak kaydet</button>';
-  const w=window.open('','_blank');
-  if(!w){toast('Açılır pencereye izin ver',true);return;}
-  w.document.write('<html><head><meta charset="utf-8"><title>'+title+'</title><style>'+css+'</style></head><body>'+body+'</body></html>');
-  w.document.close();
+  const css='body{font-family:-apple-system,system-ui,sans-serif;padding:22px;color:#0f172a}h1{font-size:19px;margin:0 0 4px}.d{color:#64748b;font-size:12px;margin-bottom:14px}h2{font-size:14px;margin:18px 0 6px}table{border-collapse:collapse;width:100%;font-size:13px;margin-bottom:8px}th{background:#0f172a;color:#fff;text-align:left;padding:8px}td{border:1px solid #cbd5e1;padding:8px}thead th{border:1px solid #0f172a}';
+  const doc='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+title+'</title><style>'+css+'</style></head><body><h1>'+title+'</h1><div class="d">Oluşturulma: '+new Date().toLocaleString('tr-TR')+'</div><h2>Özet</h2>'+t1+'<h2>Kota Durumu</h2>'+t2+'</body></html>';
+  // gizli iframe ile yazdır (popup engeline takılmaz, uygulama modunda da çalışır)
+  let f=document.getElementById('printFrame');
+  if(f)f.remove();
+  f=document.createElement('iframe');f.id='printFrame';
+  f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(f);
+  const d=f.contentWindow.document;d.open();d.write(doc);d.close();
+  setTimeout(()=>{ try{f.contentWindow.focus();f.contentWindow.print();}catch(e){toast('Yazdırma açılamadı',true);} },400);
+  toast('PDF için yazdır ekranı açılıyor…');
 }
 document.getElementById('excelBtn').onclick=exportExcel;
 document.getElementById('pdfBtn').onclick=exportPDF;
