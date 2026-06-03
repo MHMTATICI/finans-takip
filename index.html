@@ -354,6 +354,11 @@ function renderMonthSaveCard(){
   const oGel=oneoffSum('gelir',y,m), oGid=oneoffSum('gider',y,m);
   const net=inc+oGel-fixed-oGid-spent;
   const neg=net<0;
+  // kotalar (aylık planlı harcama) ve fark
+  const quotaTotal=data.config.categories.reduce((s,c)=>s+(+c.limit||0),0);
+  const quotaSpent=data.expenses.filter(e=>inMonth(e.date,y,m)&&data.config.categories.some(c=>c.name===e.category)).reduce((s,e)=>s+e.amount,0);
+  const kotaFark=quotaTotal-quotaSpent; // + : az harcadın (birikime ekle), - : aştın (saving'den düş)
+  const planNet=inc+oGel-fixed-oGid-quotaTotal; // kotalara tam uyarsan bu ay birikim
   el.innerHTML=`<h3>📅 Bu Ay · ${MONTHS[m]} ${y}</h3>
     <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0 8px">
       <span class="amt" style="font-size:30px;font-weight:800;color:${neg?'var(--bad)':'var(--good)'}">${net>=0?'+':''}${fmt(net)}</span>
@@ -363,7 +368,14 @@ function renderMonthSaveCard(){
     ${oGel?`<div class="meta" style="margin-top:4px"><span>✨ Tekil gelir</span><span class="amt" style="color:var(--good)">+${fmt(oGel)}</span></div>`:''}
     <div class="meta" style="margin-top:4px"><span>🏠 Sabit ödemeler</span><span class="amt">−${fmt(fixed)}</span></div>
     ${oGid?`<div class="meta" style="margin-top:4px"><span>✨ Tekil gider</span><span class="amt">−${fmt(oGid)}</span></div>`:''}
-    <div class="meta" style="margin-top:4px"><span>🛒 Harcamalar</span><span class="amt">−${fmt(spent)}</span></div>`;
+    <div class="meta" style="margin-top:4px"><span>🛒 Harcamalar (gerçek)</span><span class="amt">−${fmt(spent)}</span></div>
+    <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+      <div class="meta"><span>📋 Kotalar (planlı gider)</span><span class="amt">${fmt(quotaTotal)}</span></div>
+      <div class="meta" style="margin-top:4px"><span>📊 Kotadan harcanan</span><span class="amt">${fmt(quotaSpent)} / ${fmt(quotaTotal)}</span></div>
+      <div class="meta" style="margin-top:4px"><span>${kotaFark>=0?'📈 Kotadan arttı (birikime)':'📉 Kota aşıldı (saving’den)'}</span>
+        <span class="amt" style="color:${kotaFark>=0?'var(--good)':'var(--bad)'}">${kotaFark>=0?'+':''}${fmt(kotaFark)}</span></div>
+      <div class="meta" style="margin-top:4px"><span>🎯 Kotalara uyarsan birikim</span><span class="amt" style="color:var(--accent)">${planNet>=0?'+':''}${fmt(planNet)}</span></div>
+    </div>`;
 }
 function renderSavingCard(){
   const el=document.getElementById('savingCard');if(!el)return;
@@ -712,18 +724,12 @@ function fixDefaults(f){
   if(f.totalMonths==null)f.totalMonths=0;
 }
 function catRow(c){
-  if(!c.everyMonths)c.everyMonths=1;
+  c.everyMonths=1; // kotalar aylık
   const d=editCard();
-  d.innerHTML=`<div class="field"><label>Kota adı (örn. Mutfak, Benzin)</label><input type="text" value="${c.name}" data-k="name" placeholder="Mutfak"></div>
-    <div class="row">
-      <div class="field"><label>Limit (tutar)</label><input type="number" value="${c.limit}" data-k="limit"></div>
-      <div class="field"><label>Sıklık</label><select data-k="everyMonths">
-        <option value="1">Her ay</option><option value="2">2 ayda bir</option>
-        <option value="3">3 ayda bir</option><option value="6">6 ayda bir</option>
-        <option value="12">Yılda bir</option></select></div>
-    </div>`;
-  d.querySelector('[data-k=everyMonths]').value=c.everyMonths;
-  d.querySelectorAll('input,select').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;c[k]=(k==='name')?inp.value:(+inp.value||0);save();});
+  d.innerHTML=`<div class="row">
+      <div class="field"><label>Kota adı (örn. Mutfak, Benzin)</label><input type="text" value="${c.name}" data-k="name" placeholder="Mutfak"></div>
+      <div class="field"><label>Aylık limit</label><input type="number" value="${c.limit}" data-k="limit"></div></div>`;
+  d.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;c[k]=(k==='name')?inp.value:(+inp.value||0);save();});
   const del=document.createElement('button');del.className='danger';del.style.width='100%';del.textContent='Sil';
   del.onclick=()=>{data.config.categories=data.config.categories.filter(z=>z.id!==c.id);save();renderPlan();renderSetup();};
   d.appendChild(del);return d;
