@@ -98,6 +98,10 @@
       <span>Hangi aylarda alıyorsun?</span>
       <span><a href="#" id="setupSalAll" style="color:var(--accent)">Her ay</a> · <a href="#" id="setupSalNone" style="color:var(--accent)">Temizle</a></span></div>
     <div id="setupSalaryMonths"></div>
+    <div class="row" style="margin-top:6px">
+      <div class="field"><label>Ne zaman başladın? (ay)</label><select id="setupSalStartMonth"></select></div>
+      <div class="field"><label>Yıl</label><input type="number" id="setupSalStartYear" placeholder="—"></div>
+    </div>
     <div id="setupIncomeExtra"></div>
     <button class="ghost" id="setupAddIncome" style="margin-top:8px">+ Başka gelir ekle</button>
   </div>
@@ -223,7 +227,7 @@
     <h2>Ayarlar</h2>
     <div class="field">
       <label>Para birimi</label>
-      <input type="text" id="currencyInput" placeholder="dirhem">
+      <select id="currencyInput"></select>
     </div>
     <button class="sec" id="exportBtn" style="margin-top:8px">Verileri yedekle (kopyala)</button>
     <button class="danger" id="resetBtn" style="margin-top:8px;width:100%">Tüm verileri sıfırla</button>
@@ -243,6 +247,29 @@
 /* ---------------- Veri katmanı ---------------- */
 const KEY='finansData_v1';
 const MONTHS=['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+const CURRENCIES=[
+  {c:'AED',n:'BAE Dirhemi'},{c:'TRY',n:'Türk Lirası'},{c:'USD',n:'ABD Doları'},{c:'EUR',n:'Euro'},
+  {c:'GBP',n:'İngiliz Sterlini'},{c:'SAR',n:'Suudi Riyali'},{c:'QAR',n:'Katar Riyali'},{c:'KWD',n:'Kuveyt Dinarı'},
+  {c:'BHD',n:'Bahreyn Dinarı'},{c:'OMR',n:'Umman Riyali'},{c:'EGP',n:'Mısır Lirası'},{c:'JOD',n:'Ürdün Dinarı'},
+  {c:'CHF',n:'İsviçre Frangı'},{c:'JPY',n:'Japon Yeni'},{c:'CNY',n:'Çin Yuanı'},{c:'RUB',n:'Rus Rublesi'},
+  {c:'INR',n:'Hindistan Rupisi'},{c:'PKR',n:'Pakistan Rupisi'},{c:'AZN',n:'Azerbaycan Manatı'},{c:'CAD',n:'Kanada Doları'},
+  {c:'AUD',n:'Avustralya Doları'},{c:'NZD',n:'Yeni Zelanda Doları'},{c:'SEK',n:'İsveç Kronu'},{c:'NOK',n:'Norveç Kronu'},
+  {c:'DKK',n:'Danimarka Kronu'},{c:'PLN',n:'Polonya Zlotisi'},{c:'CZK',n:'Çek Korunası'},{c:'HUF',n:'Macar Forinti'},
+  {c:'RON',n:'Rumen Leyi'},{c:'BGN',n:'Bulgar Levası'},{c:'UAH',n:'Ukrayna Grivnası'},{c:'GEL',n:'Gürcü Larisi'},
+  {c:'ILS',n:'İsrail Şekeli'},{c:'IRR',n:'İran Riyali'},{c:'IQD',n:'Irak Dinarı'},{c:'LBP',n:'Lübnan Lirası'},
+  {c:'MAD',n:'Fas Dirhemi'},{c:'DZD',n:'Cezayir Dinarı'},{c:'TND',n:'Tunus Dinarı'},{c:'LYD',n:'Libya Dinarı'},
+  {c:'ZAR',n:'Güney Afrika Randı'},{c:'NGN',n:'Nijerya Nairası'},{c:'KES',n:'Kenya Şilini'},{c:'GHS',n:'Gana Cedisi'},
+  {c:'HKD',n:'Hong Kong Doları'},{c:'SGD',n:'Singapur Doları'},{c:'MYR',n:'Malezya Ringiti'},{c:'IDR',n:'Endonezya Rupiahı'},
+  {c:'THB',n:'Tayland Bahtı'},{c:'PHP',n:'Filipin Pesosu'},{c:'VND',n:'Vietnam Dongu'},{c:'KRW',n:'Güney Kore Wonu'},
+  {c:'TWD',n:'Yeni Tayvan Doları'},{c:'BDT',n:'Bangladeş Takası'},{c:'LKR',n:'Sri Lanka Rupisi'},{c:'NPR',n:'Nepal Rupisi'},
+  {c:'MXN',n:'Meksika Pesosu'},{c:'BRL',n:'Brezilya Reali'},{c:'ARS',n:'Arjantin Pesosu'},{c:'CLP',n:'Şili Pesosu'},
+  {c:'COP',n:'Kolombiya Pesosu'},{c:'PEN',n:'Peru Solü'},{c:'UYU',n:'Uruguay Pesosu'},{c:'KZT',n:'Kazak Tengesi'},
+  {c:'UZS',n:'Özbek Somu'},{c:'TMT',n:'Türkmen Manatı'},{c:'AFN',n:'Afgan Afganisi'},{c:'ISK',n:'İzlanda Kronu'},
+  {c:'RSD',n:'Sırp Dinarı'},{c:'MKD',n:'Makedon Dinarı'},{c:'ALL',n:'Arnavut Leki'},{c:'BAM',n:'Bosna Markı'},
+  {c:'HRK',n:'Hırvat Kunası'},{c:'MDL',n:'Moldova Leyi'},{c:'AMD',n:'Ermeni Dramı'},{c:'BYN',n:'Belarus Rublesi'},
+  {c:'SYP',n:'Suriye Lirası'},{c:'YER',n:'Yemen Riyali'},{c:'SDG',n:'Sudan Lirası'},{c:'ETB',n:'Etiyopya Birri'},
+  {c:'TZS',n:'Tanzanya Şilini'},{c:'UGX',n:'Uganda Şilini'},{c:'XAU',n:'Altın (ons)'},{c:'BTC',n:'Bitcoin'}
+];
 let data=load();
 if(!data.config.oneoffs)data.config.oneoffs=[]; // eski kayıtlarla uyum
 
@@ -250,7 +277,7 @@ function defaults(){
   return {
     config:{
       setupDone:false,
-      currency:'dirhem',
+      currency:'AED',
       incomes:[{id:uid(),name:'Maaş',amount:0,day:1}],
       fixed:[],
       oneoffs:[],
@@ -411,8 +438,13 @@ function incMonths(i){ // hangi aylarda alınıyor
   if(i.period==='yearly')return [i.month||0];   // eski veri göçü
   return ALLM;                                    // varsayılan: her ay
 }
-function incomeMonth(y,m){return data.config.incomes.reduce((s,i)=>s+(incMonths(i).includes(m)?(+i.amount||0):0),0);}
-function incomeAnnual(){return data.config.incomes.reduce((s,i)=>s+(+i.amount||0)*incMonths(i).length,0);}
+function incStarted(i,y,m){ // başlangıç tarihinden itibaren mi
+  if(i.startYear==null)return true;            // başlangıç yok = hep say
+  const sy=+i.startYear, sm=(i.startMonth==null?0:+i.startMonth);
+  return (y>sy)||(y===sy&&m>=sm);
+}
+function incomeMonth(y,m){return data.config.incomes.reduce((s,i)=>s+((incMonths(i).includes(m)&&incStarted(i,y,m))?(+i.amount||0):0),0);}
+function incomeAnnual(y){let t=0;for(let m=0;m<12;m++)t+=incomeMonth(y,m);return t;}
 function oneoffSum(kind,y,m){return data.config.oneoffs.filter(o=>o.kind===kind&&+o.year===y&&+o.month===m).reduce((s,o)=>s+(+o.amount||0),0);}
 function oneoffYear(kind,y){return data.config.oneoffs.filter(o=>o.kind===kind&&+o.year===y).reduce((s,o)=>s+(+o.amount||0),0);}
 function annualFixed(y){let t=0;for(let m=0;m<12;m++)data.config.fixed.forEach(f=>{if(fixedDue(f,y,m).due)t+=(+f.amount||0);});return t;}
@@ -427,7 +459,7 @@ function spentYearUpTo(y,uptoMonth){
 function savingPlan(y){
   const now=new Date();
   const cur=(y===now.getFullYear())?now.getMonth():11;
-  const inc=incomeAnnual()+oneoffYear('gelir',y);
+  const inc=incomeAnnual(y)+oneoffYear('gelir',y);
   const fix=annualFixed(y)+oneoffYear('gider',y);
   const budget=annualQuotaBudget();
   const baseline=inc-fix-budget;                    // kotalara tam uyarsan yıl sonu birikim
@@ -533,7 +565,7 @@ function renderSaving(){
      <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0">
        <span class="amt" style="font-size:30px;font-weight:800;color:${yearEnd>=0?'var(--accent)':'var(--bad)'}">${fmt(yearEnd)}</span>
        <span style="color:var(--muted)">${cur()}</span></div>
-     <div class="meta"><span>Yıllık gelir: ${fmt(incomeAnnual()+oneoffYear('gelir',savYear))}</span><span>Gider: ${fmt(annualFixed(savYear)+oneoffYear('gider',savYear))}</span></div>`;
+     <div class="meta"><span>Yıllık gelir: ${fmt(incomeAnnual(savYear)+oneoffYear('gelir',savYear))}</span><span>Gider: ${fmt(annualFixed(savYear)+oneoffYear('gider',savYear))}</span></div>`;
   // tablo
   const t=document.getElementById('savTable');t.innerHTML='';
   rows.forEach(r=>{
@@ -551,7 +583,12 @@ document.getElementById('savNext').onclick=()=>{savYear++;renderSaving();};
 
 /* ---------------- PLAN ---------------- */
 function renderPlan(){
-  document.getElementById('currencyInput').value=data.config.currency;
+  const csel=document.getElementById('currencyInput');
+  if(!csel._filled){csel.innerHTML=CURRENCIES.map(o=>`<option value="${o.c}">${o.c} — ${o.n}</option>`).join('');csel._filled=true;}
+  if(![...csel.options].some(o=>o.value===data.config.currency)){
+    const opt=document.createElement('option');opt.value=data.config.currency;opt.textContent=data.config.currency;csel.insertBefore(opt,csel.firstChild);
+  }
+  csel.value=data.config.currency;
   // gelir
   const il=document.getElementById('incomeList');il.innerHTML='';
   data.config.incomes.forEach(i=>il.appendChild(incomeRow(i)));
@@ -581,6 +618,13 @@ function incomeRow(i){
     v=>{const j=i.months.indexOf(v);j>=0?i.months.splice(j,1):i.months.push(v);save();renderPlan();renderSetup();}));
   d.querySelector('.mall').onclick=e=>{e.preventDefault();i.months=ALLM.slice();save();renderPlan();renderSetup();};
   d.querySelector('.mnone').onclick=e=>{e.preventDefault();i.months=[];save();renderPlan();renderSetup();};
+  const st=document.createElement('div');st.className='row';st.style.marginTop='6px';
+  st.innerHTML=`<div class="field"><label>Başlangıç ayı</label><select data-st="startMonth">
+      <option value="">(baştan)</option>${MONTHS.map((mn,idx)=>`<option value="${idx}">${mn}</option>`).join('')}</select></div>
+    <div class="field"><label>Başlangıç yılı</label><input type="number" data-st="startYear" value="${i.startYear??''}" placeholder="—"></div>`;
+  st.querySelector('[data-st=startMonth]').value=(i.startMonth==null?'':i.startMonth);
+  st.querySelectorAll('[data-st]').forEach(inp=>inp.oninput=()=>{i[inp.dataset.st]=inp.value===''?null:(+inp.value);save();});
+  d.appendChild(st);
   const del=document.createElement('button');del.className='danger';del.style.width='100%';del.textContent='Sil';
   del.onclick=()=>{data.config.incomes=data.config.incomes.filter(z=>z.id!==i.id);save();renderPlan();renderSetup();};
   d.appendChild(del);return d;
@@ -696,7 +740,7 @@ function addOneoff(){const now=new Date();data.config.oneoffs.push({id:uid(),kin
 document.getElementById('addIncome').onclick=()=>{data.config.incomes.push({id:uid(),name:'Yeni gelir',amount:0,day:1});save();renderPlan();};
 document.getElementById('addFixed').onclick=()=>{data.config.fixed.push({id:uid(),name:'',amount:0});save();renderPlan();};
 document.getElementById('addCat').onclick=()=>{data.config.categories.push({id:uid(),name:'Yeni kategori',limit:0});save();renderPlan();};
-document.getElementById('currencyInput').oninput=e=>{data.config.currency=e.target.value;save();};
+document.getElementById('currencyInput').onchange=e=>{data.config.currency=e.target.value;save();renderAdd();};
 document.getElementById('resetBtn').onclick=()=>{if(confirm('Tüm veriler silinsin mi?')){data=defaults();save();renderPlan();renderAdd();toast('Sıfırlandı');}};
 document.getElementById('exportBtn').onclick=()=>{
   const txt=JSON.stringify(data);
@@ -777,6 +821,12 @@ function renderSetup(){
       v=>{const j=inc0.months.indexOf(v);j>=0?inc0.months.splice(j,1):inc0.months.push(v);save();renderSetup();}));
     document.getElementById('setupSalAll').onclick=e=>{e.preventDefault();inc0.months=ALLM.slice();save();renderSetup();};
     document.getElementById('setupSalNone').onclick=e=>{e.preventDefault();inc0.months=[];save();renderSetup();};
+    const ssm=document.getElementById('setupSalStartMonth');
+    ssm.innerHTML='<option value="">(baştan)</option>'+MONTHS.map((mn,idx)=>`<option value="${idx}">${mn}</option>`).join('');
+    ssm.value=(inc0.startMonth==null?'':inc0.startMonth);
+    const ssy=document.getElementById('setupSalStartYear');ssy.value=inc0.startYear??'';
+    ssm.onchange=()=>{inc0.startMonth=ssm.value===''?null:+ssm.value;save();};
+    ssy.oninput=()=>{inc0.startYear=ssy.value===''?null:+ssy.value;save();};
   }
   // ek gelirler (ilk hariç)
   const ie=document.getElementById('setupIncomeExtra');ie.innerHTML='';
