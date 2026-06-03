@@ -474,11 +474,12 @@ function annualFixed(y){let t=0;for(let m=0;m<12;m++)data.config.fixed.forEach(f
 function annualQuotaBudget(y){let t=0;for(let m=0;m<12;m++)t+=monthlyQuota(y,m);return t;}
 function monthEnded(y,m){const n=new Date();return (y<n.getFullYear())||(y===n.getFullYear()&&m<n.getMonth());}
 function actualSpendMonth(y,m){return data.expenses.filter(e=>inMonth(e.date,y,m)).reduce((s,e)=>s+e.amount,0);}
-// birikim hesabında o ayın gideri:
-//  BİTEN ay → gerçek harcama | BU AY → max(kota, gerçek) (kota rezerve, aşınca büyür) | GELECEK → planlı kota
+function hasRecords(y,m){return data.expenses.some(e=>inMonth(e.date,y,m));}
+// birikim hesabında o ayın gideri ("harcanmış gibi" kota varsayılır, kayıt girilince gerçeğe döner):
+//  BİTEN ay: kayıt varsa gerçek, yoksa kota | BU AY: max(kota, gerçek) | GELECEK: planlı kota
 function effSpend(y,m){
-  if(monthEnded(y,m))return actualSpendMonth(y,m);
   const n=new Date();
+  if(monthEnded(y,m))return hasRecords(y,m)?actualSpendMonth(y,m):monthlyQuota(y,m);
   if(y===n.getFullYear()&&m===n.getMonth())return Math.max(monthlyQuota(y,m),actualSpendMonth(y,m));
   return monthlyQuota(y,m);
 }
@@ -572,7 +573,7 @@ function renderSaving(){
     const isCur=(savYear===now.getFullYear()&&m===now.getMonth());
     const spend_m=effSpend(savYear,m);
     const net=inc_m-fixed_m-spend_m;cum+=net;
-    rows.push({m,inc_m,fixed_m,spend_m,net,cum,lbl:ended?'gerçek':(isCur?'bu ay':'plan')});
+    rows.push({m,inc_m,fixed_m,spend_m,net,cum,lbl:ended?(hasRecords(savYear,m)?'gerçek':'plan'):(isCur?'bu ay':'plan')});
   }
   // başlık
   const yearEnd=cum;
