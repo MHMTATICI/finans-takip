@@ -83,6 +83,13 @@
   .yearbox{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px;border-top:1px solid var(--line)}
   .ycheck{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--txt);cursor:pointer}
   .ycheck input{width:17px;height:17px;accent-color:var(--accent)}
+  .bignum{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+  .stmt .meta{margin-top:5px}
+  .savrow{border-left:3px solid transparent;padding-left:8px}
+  .savrow.cur{border-left-color:var(--accent);background:rgba(56,189,248,.07)}
+  .savrow.plan{opacity:.7}
+  .savrow.real{border-left-color:var(--good)}
+  .cumchip{font-size:11px;background:var(--card2);padding:2px 8px;border-radius:6px;color:var(--muted);font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -500,12 +507,23 @@ function renderReport(){
   const totalIncome=incomeMonth(y,m)+oneoffSum('gelir',y,m);
   let totalFixed=oneoffSum('gider',y,m);data.config.fixed.forEach(f=>{if(fixedDue(f,y,m).due)totalFixed+=(+f.amount||0);});
   const eff=effSpend(y,m);            // kota planlı düşülür (harcanmış gibi); biten ay gerçek
+  const quotaTotal=monthlyQuota(y,m);
+  const actual=actualSpendMonth(y,m);
   const net=totalIncome-totalFixed-eff;
-
-  document.getElementById('summaryBoxes').innerHTML=
-    box('Gelir',totalIncome,'var(--good)')+
-    box('Sabit+Gider',totalFixed+eff,'var(--warn)')+
-    box('Birikim',net,net>=0?'var(--accent)':'var(--bad)');
+  const oGel=oneoffSum('gelir',y,m), oGid=oneoffSum('gider',y,m);
+  const overage=Math.max(0,eff-quotaTotal);
+  const sb=document.getElementById('summaryBoxes');sb.className='';
+  sb.innerHTML=`<div class="card stmt" style="margin:0">
+    <div style="display:flex;align-items:baseline;gap:8px">
+      <span class="bignum" style="color:${net>=0?'var(--accent)':'var(--bad)'}">${net>=0?'+':''}${fmt(net)}</span>
+      <span style="color:var(--muted)">${cur()} · ${net>=0?'birikim':'açık'}</span>
+    </div>
+    <div class="meta" style="margin-top:8px"><span>💵 Gelir${oGel?' (+tekil)':''}</span><span class="amt" style="color:var(--good)">+${fmt(totalIncome)}</span></div>
+    <div class="meta"><span>🏠 Sabit ödemeler${oGid?' (+tekil)':''}</span><span class="amt">−${fmt(totalFixed)}</span></div>
+    <div class="meta"><span>📋 Kotalar (planlı gider)</span><span class="amt">−${fmt(quotaTotal)}</span></div>
+    ${overage?`<div class="meta"><span>🛒 Kota aşımı</span><span class="amt" style="color:var(--bad)">−${fmt(overage)}</span></div>`:''}
+    <div class="meta" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--line)"><span style="color:var(--muted)">Bu ay harcanan (gerçek)</span><span class="amt">${fmt(actual)} / ${fmt(quotaTotal)}</span></div>
+  </div>`;
 
   // kategoriler
   const cr=document.getElementById('catReport');cr.innerHTML='';
@@ -577,21 +595,25 @@ function renderSaving(){
   }
   // başlık
   const yearEnd=cum;
+  const yInc=rows.reduce((s,r)=>s+r.inc_m,0);
+  const yGid=rows.reduce((s,r)=>s+r.fixed_m+r.spend_m,0);
   document.getElementById('savHeadline').innerHTML=
     `<h3>Yıl sonu tahmini birikim</h3>
-     <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0">
-       <span class="amt" style="font-size:30px;font-weight:800;color:${yearEnd>=0?'var(--accent)':'var(--bad)'}">${fmt(yearEnd)}</span>
+     <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0 8px">
+       <span class="bignum" style="color:${yearEnd>=0?'var(--accent)':'var(--bad)'}">${fmt(yearEnd)}</span>
        <span style="color:var(--muted)">${cur()}</span></div>
-     <div class="meta"><span>Yıllık gelir: ${fmt(incomeAnnual(savYear)+oneoffYear('gelir',savYear))}</span><span>Gider: ${fmt(annualFixed(savYear)+oneoffYear('gider',savYear))}</span></div>`;
+     <div class="meta"><span>💵 Yıllık gelir</span><span class="amt" style="color:var(--good)">+${fmt(yInc)}</span></div>
+     <div class="meta" style="margin-top:4px"><span>🧾 Yıllık gider (sabit+kota)</span><span class="amt">−${fmt(yGid)}</span></div>`;
   // tablo
   const t=document.getElementById('savTable');t.innerHTML='';
   rows.forEach(r=>{
-    const row=document.createElement('div');row.className='listitem';
+    const cls=r.lbl==='bu ay'?'cur':(r.lbl==='gerçek'?'real':'plan');
+    const row=document.createElement('div');row.className='listitem savrow '+cls;
     row.innerHTML=`<div><div class="big">${MONTHS[r.m]} <span class="tag">${r.lbl}</span></div>
-        <div class="tag amt">gider ${fmt(r.fixed_m+r.spend_m)} ${cur()}</div></div>
+        <div class="tag amt">+${fmt(r.inc_m)} / −${fmt(r.fixed_m+r.spend_m)}</div></div>
       <div style="text-align:right">
         <div class="amt big" style="color:${r.net>=0?'var(--good)':'var(--bad)'}">${r.net>=0?'+':''}${fmt(r.net)}</div>
-        <div class="tag amt">birikim ${fmt(r.cum)}</div></div>`;
+        <div class="cumchip">Σ ${fmt(r.cum)}</div></div>`;
     t.appendChild(row);
   });
 }
