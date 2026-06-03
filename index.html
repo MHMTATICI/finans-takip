@@ -628,7 +628,7 @@ function incomeRow(i){
     <div class="field"><label>Tutar (her alındığında)</label><input type="number" value="${i.amount}" data-k="amount"></div>
     <div class="ext"></div>`;
   d.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;i[k]=(k==='name')?inp.value:(+inp.value||0);save();});
-  d.querySelector('.ext').appendChild(byYearEditor(i));
+  d.querySelector('.ext').appendChild(byYearEditor(i,true));
   const del=document.createElement('button');del.className='danger';del.style.width='100%';del.style.marginTop='6px';del.textContent='Sil';
   del.onclick=()=>{data.config.incomes=data.config.incomes.filter(z=>z.id!==i.id);save();renderPlan();renderSetup();};
   d.appendChild(del);return d;
@@ -641,7 +641,8 @@ function pillRow(items,isOn,onToggle){
   return w;
 }
 // Ortak: yıllar açılır tik panelinden, sonra her yıl için aylar (gider ve gelirde aynı)
-function byYearEditor(o){
+// allDefault=true → yıl işaretlenince tüm aylar seçili gelir (gelir/kota); false → boş (sabit gider)
+function byYearEditor(o, allDefault){
   o.byYear=o.byYear||{};
   const baseY=new Date().getFullYear();
   const wrap=document.createElement('div');
@@ -656,7 +657,7 @@ function byYearEditor(o){
     for(let yy=baseY;yy<=baseY+20;yy++){
       const lbl=document.createElement('label');lbl.className='ycheck';
       const cb=document.createElement('input');cb.type='checkbox';cb.checked=(yy in o.byYear);
-      cb.onchange=()=>{cb.checked?(o.byYear[yy]=o.byYear[yy]||[]):(delete o.byYear[yy]);save();updSum();buildMonths();};
+      cb.onchange=()=>{cb.checked?(o.byYear[yy]=o.byYear[yy]||(allDefault?ALLM.slice():[])):(delete o.byYear[yy]);save();updSum();buildMonths();};
       lbl.appendChild(cb);lbl.appendChild(document.createTextNode(' '+yy));box.appendChild(lbl);
     }
   }
@@ -729,7 +730,7 @@ function catRow(c){
       <div class="field"><label>Aylık limit</label><input type="number" value="${c.limit}" data-k="limit"></div></div>
     <div class="ext"></div>`;
   d.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;c[k]=(k==='name')?inp.value:(+inp.value||0);save();});
-  d.querySelector('.ext').appendChild(byYearEditor(c));
+  d.querySelector('.ext').appendChild(byYearEditor(c,true));
   const del=document.createElement('button');del.className='danger';del.style.width='100%';del.style.marginTop='6px';del.textContent='Sil';
   del.onclick=()=>{data.config.categories=data.config.categories.filter(z=>z.id!==c.id);save();renderPlan();renderSetup();};
   d.appendChild(del);return d;
@@ -845,7 +846,7 @@ function renderSetup(){
   salary.value=inc0?.amount||'';
   salary.oninput=()=>{if(inc0)inc0.amount=+salary.value;save();};
   const ym=document.getElementById('setupSalaryYM');ym.innerHTML='';
-  if(inc0)ym.appendChild(byYearEditor(inc0));
+  if(inc0)ym.appendChild(byYearEditor(inc0,true));
   // ek gelirler (ilk hariç)
   const ie=document.getElementById('setupIncomeExtra');ie.innerHTML='';
   data.config.incomes.slice(1).forEach(i=>ie.appendChild(incomeRow(i)));
