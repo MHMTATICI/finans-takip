@@ -351,15 +351,14 @@ function renderMonthSaveCard(){
   const now=new Date();const y=now.getFullYear(),m=now.getMonth();
   const inc=incomeMonth(y,m);
   const fixed=data.config.fixed.reduce((s,f)=>s+(fixedDue(f,y,m).due?(+f.amount||0):0),0);
-  const spent=data.expenses.filter(e=>inMonth(e.date,y,m)).reduce((s,e)=>s+e.amount,0);
+  const spent=actualSpendMonth(y,m);            // bu ayın gerçek harcaması (canlı)
   const oGel=oneoffSum('gelir',y,m), oGid=oneoffSum('gider',y,m);
-  const net=inc+oGel-fixed-oGid-spent;
+  const quotaTotal=monthlyQuota(y,m);           // bu ayın planlı kota gideri
+  const overage=Math.max(0,spent-quotaTotal);   // kotayı aşan kısım (gerçek)
+  const remaining=Math.max(0,quotaTotal-spent); // kotadan kalan
+  const net=inc+oGel-fixed-oGid-quotaTotal-overage; // kota rezerve; aşınca gerçeğe büyür
   const neg=net<0;
-  // kotalar (aylık planlı harcama) ve fark
-  const quotaTotal=monthlyQuota(y,m);
-  const quotaSpent=data.expenses.filter(e=>inMonth(e.date,y,m)&&data.config.categories.some(c=>c.name===e.category)).reduce((s,e)=>s+e.amount,0);
-  const kotaFark=quotaTotal-quotaSpent; // + : az harcadın (birikime ekle), - : aştın (saving'den düş)
-  const planNet=inc+oGel-fixed-oGid-quotaTotal; // kotalara tam uyarsan bu ay birikim
+  const pct=quotaTotal>0?Math.min(100,spent/quotaTotal*100):0;
   el.innerHTML=`<h3>📅 Bu Ay · ${MONTHS[m]} ${y}</h3>
     <div style="display:flex;align-items:baseline;gap:8px;margin:2px 0 8px">
       <span class="amt" style="font-size:30px;font-weight:800;color:${neg?'var(--bad)':'var(--good)'}">${net>=0?'+':''}${fmt(net)}</span>
@@ -369,13 +368,12 @@ function renderMonthSaveCard(){
     ${oGel?`<div class="meta" style="margin-top:4px"><span>✨ Tekil gelir</span><span class="amt" style="color:var(--good)">+${fmt(oGel)}</span></div>`:''}
     <div class="meta" style="margin-top:4px"><span>🏠 Sabit ödemeler</span><span class="amt">−${fmt(fixed)}</span></div>
     ${oGid?`<div class="meta" style="margin-top:4px"><span>✨ Tekil gider</span><span class="amt">−${fmt(oGid)}</span></div>`:''}
-    <div class="meta" style="margin-top:4px"><span>🛒 Harcamalar (gerçek)</span><span class="amt">−${fmt(spent)}</span></div>
+    <div class="meta" style="margin-top:4px"><span>📋 Kotalar (planlı gider)</span><span class="amt">−${fmt(quotaTotal)}</span></div>
+    ${overage?`<div class="meta" style="margin-top:4px"><span>🛒 Kota aşımı (gerçek)</span><span class="amt" style="color:var(--bad)">−${fmt(overage)}</span></div>`:''}
     <div style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
-      <div class="meta"><span>📋 Kotalar (planlı gider)</span><span class="amt">${fmt(quotaTotal)}</span></div>
-      <div class="meta" style="margin-top:4px"><span>📊 Kotadan harcanan</span><span class="amt">${fmt(quotaSpent)} / ${fmt(quotaTotal)}</span></div>
-      <div class="meta" style="margin-top:4px"><span>${kotaFark>=0?'📈 Kotadan arttı (birikime)':'📉 Kota aşıldı (saving’den)'}</span>
-        <span class="amt" style="color:${kotaFark>=0?'var(--good)':'var(--bad)'}">${kotaFark>=0?'+':''}${fmt(kotaFark)}</span></div>
-      <div class="meta" style="margin-top:4px"><span>🎯 Kotalara uyarsan birikim</span><span class="amt" style="color:var(--accent)">${planNet>=0?'+':''}${fmt(planNet)}</span></div>
+      <div class="meta"><span>📊 Bu ay harcanan</span><span class="amt">${fmt(spent)} / ${fmt(quotaTotal)}</span></div>
+      <div class="barwrap"><div class="bar" style="width:${pct}%;background:${pct>=100?'var(--bad)':pct>=80?'var(--warn)':'var(--good)'}"></div></div>
+      <div class="meta"><span style="color:var(--muted)">${overage?'kotayı '+fmt(overage)+' aştın':'kotadan '+fmt(remaining)+' kaldı (ay sonunda harcamazsan birikime eklenir)'}</span></div>
     </div>`;
 }
 function renderSavingCard(){
@@ -474,20 +472,23 @@ function oneoffSum(kind,y,m){return data.config.oneoffs.filter(o=>o.kind===kind&
 function oneoffYear(kind,y){return data.config.oneoffs.filter(o=>o.kind===kind&&+o.year===y).reduce((s,o)=>s+(+o.amount||0),0);}
 function annualFixed(y){let t=0;for(let m=0;m<12;m++)data.config.fixed.forEach(f=>{if(fixedDue(f,y,m).due)t+=(+f.amount||0);});return t;}
 function annualQuotaBudget(y){let t=0;for(let m=0;m<12;m++)t+=monthlyQuota(y,m);return t;}
-function quotaBudgetElapsed(y,uptoMonth){let t=0;for(let m=0;m<=uptoMonth;m++)t+=monthlyQuota(y,m);return t;}
-function spentYearUpTo(y,uptoMonth){
-  return data.expenses.filter(e=>{const[a,b]=e.date.split('-');return +a===y&&(+b-1)<=uptoMonth;}).reduce((s,e)=>s+e.amount,0);
+function monthEnded(y,m){const n=new Date();return (y<n.getFullYear())||(y===n.getFullYear()&&m<n.getMonth());}
+function actualSpendMonth(y,m){return data.expenses.filter(e=>inMonth(e.date,y,m)).reduce((s,e)=>s+e.amount,0);}
+// birikim hesabında o ayın gideri:
+//  BİTEN ay → gerçek harcama | BU AY → max(kota, gerçek) (kota rezerve, aşınca büyür) | GELECEK → planlı kota
+function effSpend(y,m){
+  if(monthEnded(y,m))return actualSpendMonth(y,m);
+  const n=new Date();
+  if(y===n.getFullYear()&&m===n.getMonth())return Math.max(monthlyQuota(y,m),actualSpendMonth(y,m));
+  return monthlyQuota(y,m);
 }
 function savingPlan(y){
-  const now=new Date();
-  const cur=(y===now.getFullYear())?now.getMonth():11;
   const inc=incomeAnnual(y)+oneoffYear('gelir',y);
   const fix=annualFixed(y)+oneoffYear('gider',y);
   const budget=annualQuotaBudget(y);
   const baseline=inc-fix-budget;                    // kotalara tam uyarsan yıl sonu birikim
-  const actualSoFar=spentYearUpTo(y,cur);           // bu yıl bugüne kadar gerçek harcama
-  const plannedRemaining=budget-quotaBudgetElapsed(y,cur); // kalan aylar için planlı kota
-  const live=inc-fix-actualSoFar-plannedRemaining;  // güncel tahmini birikim
+  let effTotal=0;for(let m=0;m<12;m++)effTotal+=effSpend(y,m);
+  const live=inc-fix-effTotal;                      // biten aylar gerçek, kalanlar planlı kota
   return {baseline,live,delta:live-baseline,inc,fix,budget};
 }
 
@@ -567,12 +568,11 @@ function renderSaving(){
   for(let m=0;m<12;m++){
     const inc_m=incomeMonth(savYear,m)+oneoffSum('gelir',savYear,m);
     const fixed_m=data.config.fixed.reduce((s,f)=>s+(fixedDue(f,savYear,m).due?(+f.amount||0):0),0)+oneoffSum('gider',savYear,m);
-    const isActual=(savYear<now.getFullYear())||(savYear===now.getFullYear()&&m<=now.getMonth());
-    const spend_m=isActual
-      ? data.expenses.filter(e=>inMonth(e.date,savYear,m)).reduce((s,e)=>s+e.amount,0)
-      : monthlyQuota(savYear,m);
+    const ended=monthEnded(savYear,m);
+    const isCur=(savYear===now.getFullYear()&&m===now.getMonth());
+    const spend_m=effSpend(savYear,m);
     const net=inc_m-fixed_m-spend_m;cum+=net;
-    rows.push({m,inc_m,fixed_m,spend_m,net,cum,isActual});
+    rows.push({m,inc_m,fixed_m,spend_m,net,cum,lbl:ended?'gerçek':(isCur?'bu ay':'plan')});
   }
   // başlık
   const yearEnd=cum;
@@ -586,7 +586,7 @@ function renderSaving(){
   const t=document.getElementById('savTable');t.innerHTML='';
   rows.forEach(r=>{
     const row=document.createElement('div');row.className='listitem';
-    row.innerHTML=`<div><div class="big">${MONTHS[r.m]} <span class="tag">${r.isActual?'gerçek':'plan'}</span></div>
+    row.innerHTML=`<div><div class="big">${MONTHS[r.m]} <span class="tag">${r.lbl}</span></div>
         <div class="tag amt">gider ${fmt(r.fixed_m+r.spend_m)} ${cur()}</div></div>
       <div style="text-align:right">
         <div class="amt big" style="color:${r.net>=0?'var(--good)':'var(--bad)'}">${r.net>=0?'+':''}${fmt(r.net)}</div>
