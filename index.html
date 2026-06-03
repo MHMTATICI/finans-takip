@@ -497,15 +497,15 @@ function renderReport(){
   const{year:y,month:m}=view;
   document.getElementById('monthLabel').textContent=MONTHS[m]+' '+y;
   const monthExp=data.expenses.filter(e=>inMonth(e.date,y,m));
-  const totalSpent=monthExp.reduce((s,e)=>s+e.amount,0);
   const totalIncome=incomeMonth(y,m)+oneoffSum('gelir',y,m);
   let totalFixed=oneoffSum('gider',y,m);data.config.fixed.forEach(f=>{if(fixedDue(f,y,m).due)totalFixed+=(+f.amount||0);});
-  const net=totalIncome-totalFixed-totalSpent;
+  const eff=effSpend(y,m);            // kota planlı düşülür (harcanmış gibi); biten ay gerçek
+  const net=totalIncome-totalFixed-eff;
 
   document.getElementById('summaryBoxes').innerHTML=
     box('Gelir',totalIncome,'var(--good)')+
-    box('Sabit+Harcama',totalFixed+totalSpent,'var(--warn)')+
-    box('Kalan',net,net>=0?'var(--accent)':'var(--bad)');
+    box('Sabit+Gider',totalFixed+eff,'var(--warn)')+
+    box('Birikim',net,net>=0?'var(--accent)':'var(--bad)');
 
   // kategoriler
   const cr=document.getElementById('catReport');cr.innerHTML='';
