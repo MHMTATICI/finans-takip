@@ -94,14 +94,7 @@
     <div class="step">1 · Gelir</div>
     <h2 style="margin-top:6px">Maaşın ne kadar?</h2>
     <input type="number" id="setupSalary" placeholder="0" inputmode="numeric">
-    <div class="hint" style="display:flex;justify-content:space-between;align-items:center">
-      <span>Hangi aylarda alıyorsun?</span>
-      <span><a href="#" id="setupSalAll" style="color:var(--accent)">Her ay</a> · <a href="#" id="setupSalNone" style="color:var(--accent)">Temizle</a></span></div>
-    <div id="setupSalaryMonths"></div>
-    <div class="row" style="margin-top:6px">
-      <div class="field"><label>Ne zaman başladın? (ay)</label><select id="setupSalStartMonth"></select></div>
-      <div class="field"><label>Yıl</label><input type="number" id="setupSalStartYear" placeholder="—"></div>
-    </div>
+    <div id="setupSalaryYM"></div>
     <div id="setupIncomeExtra"></div>
     <button class="ghost" id="setupAddIncome" style="margin-top:8px">+ Başka gelir ekle</button>
   </div>
@@ -247,6 +240,7 @@
 /* ---------------- Veri katmanı ---------------- */
 const KEY='finansData_v1';
 const MONTHS=['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+const ALLM=[0,1,2,3,4,5,6,7,8,9,10,11];
 const CURRENCIES=[
   {c:'AED',n:'BAE Dirhemi'},{c:'TRY',n:'Türk Lirası'},{c:'USD',n:'ABD Doları'},{c:'EUR',n:'Euro'},
   {c:'GBP',n:'İngiliz Sterlini'},{c:'SAR',n:'Suudi Riyali'},{c:'QAR',n:'Katar Riyali'},{c:'KWD',n:'Kuveyt Dinarı'},
@@ -272,6 +266,7 @@ const CURRENCIES=[
 ];
 let data=load();
 if(!data.config.oneoffs)data.config.oneoffs=[]; // eski kayıtlarla uyum
+data.config.incomes.forEach(incNorm); // gelirleri yıl/ay yapısına çevir
 
 function defaults(){
   return {
@@ -432,18 +427,18 @@ function catSpentInPeriod(name,y,pStart,N){
   return data.expenses.filter(e=>{const[a,b]=e.date.split('-');const mm=+b-1;
     return +a===y&&mm>=pStart&&mm<pStart+N&&e.category===name;}).reduce((s,e)=>s+e.amount,0);
 }
-const ALLM=[0,1,2,3,4,5,6,7,8,9,10,11];
-function incMonths(i){ // hangi aylarda alınıyor
-  if(Array.isArray(i.months))return i.months;
-  if(i.period==='yearly')return [i.month||0];   // eski veri göçü
-  return ALLM;                                    // varsayılan: her ay
+function incNorm(i){ // eski gelir verisini yıl/ay (byYear) yapısına çevir
+  if(!i.byYear){
+    i.byYear={};
+    const baseY=new Date().getFullYear();
+    const months=Array.isArray(i.months)?i.months:(i.period==='yearly'?[(+i.month||0)]:ALLM.slice());
+    const sy=(i.startYear!=null)?+i.startYear:baseY;
+    const sm=(i.startMonth!=null)?+i.startMonth:0;
+    for(let yy=sy;yy<=sy+6;yy++) i.byYear[yy]=months.filter(m=>(yy>sy)||(m>=sm));
+  }
+  return i;
 }
-function incStarted(i,y,m){ // başlangıç tarihinden itibaren mi
-  if(i.startYear==null)return true;            // başlangıç yok = hep say
-  const sy=+i.startYear, sm=(i.startMonth==null?0:+i.startMonth);
-  return (y>sy)||(y===sy&&m>=sm);
-}
-function incomeMonth(y,m){return data.config.incomes.reduce((s,i)=>s+((incMonths(i).includes(m)&&incStarted(i,y,m))?(+i.amount||0):0),0);}
+function incomeMonth(y,m){return data.config.incomes.reduce((s,i)=>{const ms=(i.byYear||{})[y]||[];return s+(ms.includes(m)?(+i.amount||0):0);},0);}
 function incomeAnnual(y){let t=0;for(let m=0;m<12;m++)t+=incomeMonth(y,m);return t;}
 function oneoffSum(kind,y,m){return data.config.oneoffs.filter(o=>o.kind===kind&&+o.year===y&&+o.month===m).reduce((s,o)=>s+(+o.amount||0),0);}
 function oneoffYear(kind,y){return data.config.oneoffs.filter(o=>o.kind===kind&&+o.year===y).reduce((s,o)=>s+(+o.amount||0),0);}
@@ -603,29 +598,14 @@ function renderPlan(){
 }
 function editCard(){const d=document.createElement('div');d.className='card';d.style.background='var(--card2)';return d;}
 function incomeRow(i){
-  if(!Array.isArray(i.months))i.months=incMonths(i).slice();
+  incNorm(i);
   const d=editCard();
   d.innerHTML=`<div class="field"><label>Ad</label><input type="text" value="${i.name}" data-k="name"></div>
     <div class="field"><label>Tutar (her alındığında)</label><input type="number" value="${i.amount}" data-k="amount"></div>
-    <div class="hint" style="margin-top:0;display:flex;justify-content:space-between;align-items:center">
-      <span>Hangi aylarda alıyorsun?</span>
-      <span><a href="#" class="mall" style="color:var(--accent)">Her ay</a> · <a href="#" class="mnone" style="color:var(--accent)">Temizle</a></span></div>
     <div class="ext"></div>`;
   d.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;i[k]=(k==='name')?inp.value:(+inp.value||0);save();});
-  const ext=d.querySelector('.ext');
-  ext.appendChild(pillRow(MONTHS.map((mn,idx)=>({v:idx,t:mn.slice(0,3)})),
-    v=>i.months.includes(v),
-    v=>{const j=i.months.indexOf(v);j>=0?i.months.splice(j,1):i.months.push(v);save();renderPlan();renderSetup();}));
-  d.querySelector('.mall').onclick=e=>{e.preventDefault();i.months=ALLM.slice();save();renderPlan();renderSetup();};
-  d.querySelector('.mnone').onclick=e=>{e.preventDefault();i.months=[];save();renderPlan();renderSetup();};
-  const st=document.createElement('div');st.className='row';st.style.marginTop='6px';
-  st.innerHTML=`<div class="field"><label>Başlangıç ayı</label><select data-st="startMonth">
-      <option value="">(baştan)</option>${MONTHS.map((mn,idx)=>`<option value="${idx}">${mn}</option>`).join('')}</select></div>
-    <div class="field"><label>Başlangıç yılı</label><input type="number" data-st="startYear" value="${i.startYear??''}" placeholder="—"></div>`;
-  st.querySelector('[data-st=startMonth]').value=(i.startMonth==null?'':i.startMonth);
-  st.querySelectorAll('[data-st]').forEach(inp=>inp.oninput=()=>{i[inp.dataset.st]=inp.value===''?null:(+inp.value);save();});
-  d.appendChild(st);
-  const del=document.createElement('button');del.className='danger';del.style.width='100%';del.textContent='Sil';
+  d.querySelector('.ext').appendChild(byYearEditor(i,()=>{renderPlan();renderSetup();}));
+  const del=document.createElement('button');del.className='danger';del.style.width='100%';del.style.marginTop='6px';del.textContent='Sil';
   del.onclick=()=>{data.config.incomes=data.config.incomes.filter(z=>z.id!==i.id);save();renderPlan();renderSetup();};
   d.appendChild(del);return d;
 }
@@ -635,6 +615,28 @@ function pillRow(items,isOn,onToggle){
     s.className='pill'+(isOn(it.v)?' on':'');s.textContent=it.t;
     s.onclick=()=>onToggle(it.v);w.appendChild(s);});
   return w;
+}
+// Ortak: önce yıllar, sonra her yıl için ayları tek tek seç (gider ve gelirde kullanılır)
+function byYearEditor(o, refresh){
+  o.byYear=o.byYear||{};
+  const wrap=document.createElement('div');
+  const mk=t=>{const x=document.createElement('div');x.className='hint';x.style.marginTop='0';x.textContent=t;return x;};
+  wrap.appendChild(mk('1) Hangi yıllar?'));
+  const baseY=new Date().getFullYear();
+  const years=[];for(let yy=baseY;yy<=baseY+6;yy++)years.push({v:yy,t:String(yy)});
+  wrap.appendChild(pillRow(years,v=>(v in o.byYear),v=>{
+    (v in o.byYear)?delete o.byYear[v]:o.byYear[v]=[];save();refresh();}));
+  Object.keys(o.byYear).map(Number).sort((a,b)=>a-b).forEach(yy=>{
+    const hdr=document.createElement('div');hdr.className='hint';hdr.style.cssText='margin-top:0;display:flex;justify-content:space-between;align-items:center';
+    hdr.innerHTML='<span>2) '+yy+' — hangi aylar?</span>';
+    const all=document.createElement('a');all.href='#';all.style.color='var(--accent)';all.textContent='Her ay';
+    all.onclick=e=>{e.preventDefault();o.byYear[yy]=ALLM.slice();save();refresh();};
+    hdr.appendChild(all);wrap.appendChild(hdr);
+    wrap.appendChild(pillRow(MONTHS.map((mn,i)=>({v:i,t:mn.slice(0,3)})),
+      v=>o.byYear[yy].includes(v),
+      v=>{const arr=o.byYear[yy];const i=arr.indexOf(v);i>=0?arr.splice(i,1):arr.push(v);save();refresh();}));
+  });
+  return wrap;
 }
 function fixedRow(f){
   fixDefaults(f);
@@ -650,20 +652,7 @@ function fixedRow(f){
   d.querySelectorAll('[data-k]').forEach(inp=>inp.oninput=()=>{const k=inp.dataset.k;f[k]=(k==='name')?inp.value:(+inp.value||0);save();});
   const extra=d.querySelector('.extra');
   if(f.mode==='months'){
-    f.byYear=f.byYear||{};
-    const mk=t=>{const x=document.createElement('div');x.className='hint';x.style.marginTop='0';x.textContent=t;return x;};
-    extra.appendChild(mk('1) Hangi yıllar?'));
-    const baseY=new Date().getFullYear();
-    const years=[];for(let yy=baseY;yy<=baseY+6;yy++)years.push({v:yy,t:String(yy)});
-    extra.appendChild(pillRow(years,v=>(v in f.byYear),v=>{
-      (v in f.byYear)?delete f.byYear[v]:f.byYear[v]=[];save();renderPlan();renderSetup();}));
-    // her seçili yıl için ayrı ay seçimi
-    Object.keys(f.byYear).map(Number).sort((a,b)=>a-b).forEach(yy=>{
-      extra.appendChild(mk('2) '+yy+' — hangi aylar?'));
-      extra.appendChild(pillRow(MONTHS.map((mn,i)=>({v:i,t:mn.slice(0,3)})),
-        v=>f.byYear[yy].includes(v),
-        v=>{const arr=f.byYear[yy];const i=arr.indexOf(v);i>=0?arr.splice(i,1):arr.push(v);save();renderPlan();renderSetup();}));
-    });
+    extra.appendChild(byYearEditor(f,()=>{renderPlan();renderSetup();}));
   } else {
     extra.innerHTML=`<div class="row">
         <div class="field"><label>Sıklık</label><select data-fk="everyMonths">
@@ -737,7 +726,7 @@ function oneoffRow(o){
 function renderOneoffs(id){const c=document.getElementById(id);if(!c)return;c.innerHTML='';data.config.oneoffs.forEach(o=>c.appendChild(oneoffRow(o)));}
 function addOneoff(){const now=new Date();data.config.oneoffs.push({id:uid(),kind:'gider',name:'',amount:0,year:now.getFullYear(),month:now.getMonth()});save();renderPlan();renderSetup();}
 
-document.getElementById('addIncome').onclick=()=>{data.config.incomes.push({id:uid(),name:'Yeni gelir',amount:0,day:1});save();renderPlan();};
+document.getElementById('addIncome').onclick=()=>{data.config.incomes.push({id:uid(),name:'Yeni gelir',amount:0,byYear:{[new Date().getFullYear()]:ALLM.slice()}});save();renderPlan();};
 document.getElementById('addFixed').onclick=()=>{data.config.fixed.push({id:uid(),name:'',amount:0});save();renderPlan();};
 document.getElementById('addCat').onclick=()=>{data.config.categories.push({id:uid(),name:'Yeni kategori',limit:0});save();renderPlan();};
 document.getElementById('currencyInput').onchange=e=>{data.config.currency=e.target.value;save();renderAdd();};
@@ -810,24 +799,12 @@ function maybeSetup(){
 function renderSetup(){
   // ana maaş = ilk gelir
   const inc0=data.config.incomes[0];
-  if(inc0&&!Array.isArray(inc0.months))inc0.months=incMonths(inc0).slice();
+  if(inc0)incNorm(inc0);
   const salary=document.getElementById('setupSalary');
   salary.value=inc0?.amount||'';
   salary.oninput=()=>{if(inc0)inc0.amount=+salary.value;save();};
-  const mc=document.getElementById('setupSalaryMonths');mc.innerHTML='';
-  if(inc0){
-    mc.appendChild(pillRow(MONTHS.map((mn,idx)=>({v:idx,t:mn.slice(0,3)})),
-      v=>inc0.months.includes(v),
-      v=>{const j=inc0.months.indexOf(v);j>=0?inc0.months.splice(j,1):inc0.months.push(v);save();renderSetup();}));
-    document.getElementById('setupSalAll').onclick=e=>{e.preventDefault();inc0.months=ALLM.slice();save();renderSetup();};
-    document.getElementById('setupSalNone').onclick=e=>{e.preventDefault();inc0.months=[];save();renderSetup();};
-    const ssm=document.getElementById('setupSalStartMonth');
-    ssm.innerHTML='<option value="">(baştan)</option>'+MONTHS.map((mn,idx)=>`<option value="${idx}">${mn}</option>`).join('');
-    ssm.value=(inc0.startMonth==null?'':inc0.startMonth);
-    const ssy=document.getElementById('setupSalStartYear');ssy.value=inc0.startYear??'';
-    ssm.onchange=()=>{inc0.startMonth=ssm.value===''?null:+ssm.value;save();};
-    ssy.oninput=()=>{inc0.startYear=ssy.value===''?null:+ssy.value;save();};
-  }
+  const ym=document.getElementById('setupSalaryYM');ym.innerHTML='';
+  if(inc0)ym.appendChild(byYearEditor(inc0,()=>renderSetup()));
   // ek gelirler (ilk hariç)
   const ie=document.getElementById('setupIncomeExtra');ie.innerHTML='';
   data.config.incomes.slice(1).forEach(i=>ie.appendChild(incomeRow(i)));
@@ -840,7 +817,7 @@ function renderSetup(){
   const cl=document.getElementById('setupCatList');cl.innerHTML='';
   data.config.categories.forEach(c=>cl.appendChild(catRow(c)));
 }
-document.getElementById('setupAddIncome').onclick=()=>{data.config.incomes.push({id:uid(),name:'Ek gelir',amount:0,day:1});save();renderSetup();};
+document.getElementById('setupAddIncome').onclick=()=>{data.config.incomes.push({id:uid(),name:'Ek gelir',amount:0,byYear:{[new Date().getFullYear()]:ALLM.slice()}});save();renderSetup();};
 document.getElementById('setupAddFixed').onclick=()=>{data.config.fixed.push({id:uid(),name:'',amount:0});save();renderSetup();};
 document.getElementById('addOneoff').onclick=addOneoff;
 document.getElementById('setupAddOneoff').onclick=addOneoff;
